@@ -132,21 +132,21 @@ Optimized for:
 
 ### Homepage
 
-```markdown
+
 ![Homepage](screenshots/homepage.png)
-```
+
 
 ### Telemetry Dashboard
 
-```markdown
+
 ![Telemetry](screenshots/telemetry.png)
-```
+
 
 ### Showroom Mode
 
-```markdown
+
 ![Showroom](screenshots/showroom.png)
-```
+
 
 ---
 
