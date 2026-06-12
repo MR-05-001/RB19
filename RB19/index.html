@@ -1,0 +1,1210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>RB19 // TELEMETRY DASHBOARD</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;500;700;900&display=swap');
+
+        :root {
+            --navy:    #010f1e;
+            --red:     #D01C42;
+            --red-glow:#ff2555;
+            --yellow:  #FFC72C;
+            --cyan:    #00d4ff;
+            --glass:   rgba(1,15,30,0.72);
+            --border:  rgba(255,255,255,0.06);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; }
+
+        html, body {
+            margin: 0; padding: 0;
+            background: #000;
+            color: #fff;
+            font-family: 'Space Grotesk', sans-serif;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+            width: 100vw; height: 100vh;
+        }
+
+        /* ── BUTTERY SMOOTH CUSTOM CURSOR ── */
+        @media (pointer: fine) {
+            body, a, button, canvas, .interactive { cursor: none !important; }
+        }
+        .custom-cursor-dot {
+            width: 4px; height: 4px;
+            background: var(--red); border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: background 0.2s, transform 0.2s cubic-bezier(0.19, 1, 0.22, 1);
+        }
+        .custom-cursor-ring {
+            width: 32px; height: 32px;
+            border: 1px solid rgba(0, 212, 255, 0.4); border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: border-color 0.2s, transform 0.2s cubic-bezier(0.19, 1, 0.22, 1), background 0.2s;
+        }
+        .custom-cursor-dot.hover { background: var(--cyan); transform: translate(-50%, -50%) scale(1.5); }
+        .custom-cursor-ring.hover {
+            border-color: var(--cyan); transform: translate(-50%, -50%) scale(1.5);
+            background: rgba(0, 212, 255, 0.05);
+        }
+        @media (pointer: coarse) {
+            #cursor-dot-wrapper, #cursor-ring-wrapper { display: none !important; }
+            body, a, button, canvas, .interactive { cursor: auto !important; }
+        }
+
+        canvas#webgl { position: fixed; inset: 0; z-index: 0; outline: none; }
+
+        /* ── SCAN‑LINE OVERLAY ── */
+        body::after {
+            content: ''; position: fixed; inset: 0; z-index: 5;
+            background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.07) 2px, rgba(0,0,0,0.07) 4px);
+            pointer-events: none;
+        }
+
+        #vignette {
+            position: fixed; inset: 0; z-index: 6;
+            background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.85) 100%);
+            pointer-events: none;
+        }
+
+        /* ── LOADING SCREEN ── */
+        #loading-screen {
+            position: fixed; inset: 0; z-index: 200; background: #000;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        #loading-screen .grid-bg {
+            position: absolute; inset: 0;
+            background-image: linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+            background-size: 48px 48px; animation: gridDrift 20s linear infinite;
+        }
+        @keyframes gridDrift { to { background-position: 48px 48px; } }
+        #loading-screen .corner { position: absolute; width: 40px; height: 40px; }
+        #loading-screen .corner.tl { top: 32px; left: 32px; border-top: 2px solid var(--red); border-left: 2px solid var(--red); }
+        #loading-screen .corner.tr { top: 32px; right: 32px; border-top: 2px solid var(--red); border-right: 2px solid var(--red); }
+        #loading-screen .corner.bl { bottom: 32px; left: 32px; border-bottom: 2px solid var(--red); border-left: 2px solid var(--red); }
+        #loading-screen .corner.br { bottom: 32px; right: 32px; border-bottom: 2px solid var(--red); border-right: 2px solid var(--red); }
+
+        #load-title {
+            font-family: 'Orbitron', sans-serif; font-size: clamp(4rem, 15vw, 12rem);
+            font-weight: 900; line-height: 0.85; letter-spacing: -0.04em; color: #fff;
+            position: relative; text-align: center; transform: skewX(-4deg);
+        }
+        #load-title .red-stroke {
+            position: absolute; inset: 0; color: transparent;
+            -webkit-text-stroke: 1px var(--red); transform: translate(3px, 3px); opacity: 0.4;
+        }
+
+        #progress-track { width: min(320px, 80vw); height: 2px; background: rgba(255,255,255,0.06); position: relative; overflow: hidden; margin: 2.5rem auto 0; }
+        #progress-fill { height: 100%; background: linear-gradient(90deg, var(--red), var(--red-glow)); width: 0%; transition: width 0.15s ease; box-shadow: 0 0 16px var(--red-glow); }
+        #load-status { font-family: 'Rajdhani', sans-serif; font-size: 0.7rem; letter-spacing: 0.4em; color: rgba(255,255,255,0.35); text-transform: uppercase; margin-top: 1.25rem; min-height: 1.2em; text-align: center;}
+
+        .btn-enter {
+            margin-top: 3rem; padding: 1rem 3.5rem; font-family: 'Rajdhani', sans-serif; font-size: 0.8rem; font-weight: 700;
+            letter-spacing: 0.35em; text-transform: uppercase; color: white; background: transparent; border: 1px solid var(--red);
+            opacity: 0.3; transition: all 0.4s; position: relative; overflow: hidden; pointer-events: none;
+        }
+        .btn-enter::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(208,28,66,0.3), transparent); transition: left 0.5s; }
+        .btn-enter.ready { opacity: 1; pointer-events: auto; box-shadow: 0 0 24px rgba(208,28,66,0.25); }
+        .btn-enter.ready:hover { background: var(--red); box-shadow: 0 0 40px rgba(255,37,85,0.5); }
+        .btn-enter.ready:hover::before { left: 100%; }
+
+        /* ── MAIN UI LAYER ── */
+        #ui { position: fixed; inset: 0; z-index: 20; pointer-events: none; }
+        .interactive { pointer-events: auto; }
+
+        nav { position: absolute; top: 0; left: 0; right: 0; padding: 1.75rem 2.5rem; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(180deg, rgba(0,0,0,0.7) 0%, transparent 100%); }
+        .nav-brand { display: flex; align-items: center; gap: 0.75rem; }
+        .nav-brand-icon { width: 28px; height: 28px; border: 1px solid var(--red); display: flex; align-items: center; justify-content: center; font-family: 'Orbitron', sans-serif; font-size: 0.55rem; font-weight: 900; color: var(--red); letter-spacing: 0.05em; }
+        .nav-brand-text { font-family: 'Rajdhani', sans-serif; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.25em; color: rgba(255,255,255,0.6); text-transform: uppercase; }
+        .nav-actions { display: flex; align-items: center; gap: 2rem; }
+        .nav-btn { font-family: 'Rajdhani', sans-serif; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(255,255,255,0.55); background: none; border: none; padding: 0.4rem 0; position: relative; transition: color 0.3s; }
+        .nav-btn::after { content: ''; position: absolute; bottom: 0; left: 0; right: 100%; height: 1px; background: var(--red); transition: right 0.3s cubic-bezier(0.4,0,0.2,1); }
+        .nav-btn:hover { color: #fff; } .nav-btn:hover::after { right: 0; }
+        .nav-status { display: flex; align-items: center; gap: 0.5rem; font-family: 'Rajdhani', sans-serif; font-size: 0.65rem; letter-spacing: 0.15em; color: rgba(255,255,255,0.25); text-transform: uppercase; }
+        .nav-status-dot { width: 5px; height: 5px; border-radius: 50%; background: #2ecc71; box-shadow: 0 0 8px #2ecc71; animation: statusPulse 2.5s ease-in-out infinite; }
+        @keyframes statusPulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+        #hero-text { position: absolute; bottom: 8%; left: 50%; transform: translateX(-50%); text-align: center; opacity: 0; transition: opacity 0.6s ease; pointer-events: none; width: 100%; }
+        #hero-text.visible { opacity: 1; }
+        .hero-label { font-family: 'Rajdhani', sans-serif; font-size: clamp(0.5rem, 2vw, 0.65rem); letter-spacing: 0.6em; color: rgba(255,255,255,0.3); text-transform: uppercase; margin-bottom: 0.75rem; }
+        .hero-title { font-family: 'Orbitron', sans-serif; font-size: clamp(1.8rem, 6vw, 3rem); font-weight: 900; background: linear-gradient(180deg, #fff 0%, rgba(255,255,255,0.35) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: 0.3em; white-space: nowrap; }
+        .hero-hint { display: flex; align-items: center; justify-content: center; gap: 0.6rem; margin-top: 1.5rem; font-family: 'Rajdhani', sans-serif; font-size: 0.65rem; letter-spacing: 0.3em; color: rgba(255,255,255,0.25); text-transform: uppercase; animation: breathe 2.8s ease-in-out infinite; }
+        .hero-hint::before, .hero-hint::after { content: ''; width: 24px; height: 1px; background: rgba(255,255,255,0.15); }
+
+        #data-strip { position: absolute; top: 0; left: 50%; transform: translateX(-50%); display: flex; align-items: stretch; opacity: 0; transition: opacity 0.6s ease; }
+        #data-strip.visible { opacity: 1; }
+        .strip-item { padding: 0.6rem min(1.75rem, 3vw); border-right: 1px solid rgba(255,255,255,0.06); text-align: center; background: rgba(0,0,0,0.5); backdrop-filter: blur(12px); }
+        .strip-item:last-child { border-right: none; }
+        .strip-label { font-family: 'Rajdhani', sans-serif; font-size: 0.55rem; letter-spacing: 0.25em; color: rgba(255,255,255,0.3); text-transform: uppercase; }
+        .strip-value { font-family: 'Rajdhani', sans-serif; font-size: 1rem; font-weight: 700; color: #fff; line-height: 1.1; margin-top: 0.1rem; }
+        .strip-value.red { color: var(--red); }
+
+        #live-readout { position: absolute; left: 2.5rem; top: 50%; transform: translateY(-50%); opacity: 0; transition: opacity 0.6s ease; pointer-events: none; }
+        #live-readout.visible { opacity: 1; }
+        .readout-item { margin-bottom: 1.5rem; }
+        .readout-label { font-family: 'Rajdhani', sans-serif; font-size: 0.55rem; letter-spacing: 0.3em; color: rgba(255,255,255,0.25); text-transform: uppercase; }
+        .readout-value { font-family: 'Rajdhani', sans-serif; font-size: 1.6rem; font-weight: 700; color: #fff; line-height: 1; letter-spacing: -0.02em; }
+        .readout-value span { font-size: 0.7rem; color: rgba(255,255,255,0.3); letter-spacing: 0.1em; font-weight: 400; }
+        .readout-bar { width: 80px; height: 2px; background: rgba(255,255,255,0.08); margin-top: 0.4rem; position: relative; overflow: hidden; }
+        .readout-bar-fill { position: absolute; inset-y: 0; left: 0; background: linear-gradient(90deg, var(--cyan), var(--red)); transition: width 0.1s linear;}
+
+        #team-info { position: absolute; right: 2.5rem; top: 50%; transform: translateY(-50%); opacity: 0; transition: opacity 0.6s ease; pointer-events: none; text-align: right; }
+        #team-info.visible { opacity: 1; pointer-events: auto; }
+        .team-header { font-family: 'Rajdhani', sans-serif; font-size: 0.65rem; letter-spacing: 0.4em; color: var(--red); text-transform: uppercase; font-weight: 700; margin-bottom: 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.5rem; }
+        .team-row { margin-bottom: 1rem; display: flex; justify-content: flex-end; gap: 1rem; align-items: baseline; }
+        .team-label { font-family: 'Rajdhani', sans-serif; font-size: 0.6rem; letter-spacing: 0.2em; color: rgba(255,255,255,0.4); text-transform: uppercase; }
+        .team-val { font-family: 'Rajdhani', sans-serif; font-size: 1.1rem; font-weight: 700; color: #fff; }
+
+        /* ── TELEMETRY INSPECT PANEL ── */
+        #inspect-panel { position: absolute; left: 2.5rem; top: 50%; transform: translateY(-50%) translateX(-30px); width: min(420px, 90vw); opacity: 0; pointer-events: none; transition: all 0.5s cubic-bezier(0.19,1,0.22,1); }
+        #inspect-panel.active { opacity: 1; pointer-events: auto; transform: translateY(-50%) translateX(0); }
+        .panel-card { background: rgba(0,6,14,0.88); backdrop-filter: blur(28px) saturate(1.5); border: 1px solid rgba(255,255,255,0.06); border-left: 2px solid var(--red); border-radius: 0 12px 12px 0; overflow: hidden; }
+        .panel-card-header { padding: 1.25rem 1.75rem; background: linear-gradient(90deg, rgba(208,28,66,0.08) 0%, transparent 100%); border-bottom: 1px solid rgba(255,255,255,0.04); display: flex; align-items: center; justify-content: space-between; }
+        .panel-tag { font-family: 'Rajdhani', sans-serif; font-size: 0.6rem; letter-spacing: 0.4em; color: var(--red); text-transform: uppercase; font-weight: 600; }
+        .panel-close-btn { width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.1); background: none; color: rgba(255,255,255,0.4); font-size: 0.8rem; display: flex; align-items: center; justify-content: center; transition: all 0.25s; }
+        .panel-close-btn:hover { border-color: var(--red); color: var(--red); background: rgba(208,28,66,0.1); }
+        .panel-body { padding: 1.75rem; }
+        .panel-heading { font-family: 'Orbitron', sans-serif; font-size: clamp(1.8rem, 4vw, 3rem); font-weight: 900; line-height: 0.9; letter-spacing: -0.02em; color: #fff; }
+        .panel-desc { font-size: 0.82rem; line-height: 1.9; color: rgba(255,255,255,0.6); margin-top: 1rem; }
+        .panel-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 1.5rem; border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; overflow: hidden; }
+        .stat-cell { padding: 0.9rem 1.1rem; border-right: 1px solid rgba(255,255,255,0.06); border-bottom: 1px solid rgba(255,255,255,0.06); }
+        .stat-cell:nth-child(2n) { border-right: none; }
+        .stat-cell:nth-last-child(-n+2) { border-bottom: none; }
+        .stat-cell-label { font-family: 'Rajdhani', sans-serif; font-size: 0.6rem; letter-spacing: 0.2em; color: rgba(255,255,255,0.28); text-transform: uppercase; }
+        .stat-cell-value { font-family: 'Rajdhani', sans-serif; font-size: 1.35rem; font-weight: 700; color: #fff; margin-top: 0.15rem; line-height: 1; }
+        .btn-back { display: inline-flex; align-items: center; gap: 0.5rem; font-family: 'Rajdhani', sans-serif; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.2em; color: rgba(255,255,255,0.3); text-transform: uppercase; background: none; border: none; padding: 1.25rem 1.75rem 0; transition: color 0.25s; }
+        .btn-back:hover { color: var(--red); }
+
+        /* ── SHOWROOM OVERLAY ── */
+        #showroom { position: fixed; inset: 0; z-index: 100; display: none; opacity: 0; transition: opacity 0.45s ease; pointer-events: none; }
+        #showroom.active { display: flex; opacity: 1; pointer-events: none; }
+        #showroom .interactive { pointer-events: auto; }
+        #showroom-top { position: absolute; top: 0; left: 0; right: 0; padding: 2rem; text-align: center; background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, transparent 100%); }
+        .showroom-title { font-family: 'Orbitron', sans-serif; font-size: 0.9rem; font-weight: 700; letter-spacing: 0.5em; color: rgba(255,255,255,0.6); text-transform: uppercase; }
+        #showroom-close { position: absolute; top: 1.5rem; right: 2rem; width: 40px; height: 40px; border: 1px solid rgba(255,255,255,0.1); border-radius: 50%; background: rgba(0,0,0,0.6); backdrop-filter: blur(12px); color: rgba(255,255,255,0.6); font-size: 1.1rem; display: flex; align-items: center; justify-content: center; transition: all 0.25s; }
+        #showroom-close:hover { border-color: var(--red); color: var(--red); background: rgba(208,28,66,0.12); }
+        #showroom-controls { position: absolute; bottom: 2.5rem; left: 50%; transform: translateX(-50%); display: flex; gap: 0.4rem; flex-wrap: wrap; justify-content: center; width: 90vw; }
+        .ctrl-btn { padding: 0.55rem 1.35rem; font-family: 'Rajdhani', sans-serif; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; background: rgba(0,6,14,0.8); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); color: rgba(255,255,255,0.5); transition: all 0.25s; border-radius: 2px; }
+        .ctrl-btn:hover, .ctrl-btn.active { background: var(--red); border-color: var(--red); color: #fff; box-shadow: 0 0 16px rgba(208,28,66,0.4); }
+
+        /* ── SEASON OVERLAY ── */
+        #season-overlay { position: fixed; inset: 0; z-index: 120; background: rgba(0,6,14,0.95); backdrop-filter: blur(20px); display: none; opacity: 0; transition: opacity 0.45s ease; pointer-events: none; padding: 6rem 2rem 2rem; overflow: hidden; }
+        #season-overlay.active { display: flex; flex-direction: column; opacity: 1; pointer-events: auto; }
+        #season-close { position: absolute; top: 1.5rem; right: 2rem; width: 40px; height: 40px; border: 1px solid rgba(255,255,255,0.1); border-radius: 50%; background: rgba(0,0,0,0.6); backdrop-filter: blur(12px); color: rgba(255,255,255,0.6); font-size: 1.1rem; display: flex; align-items: center; justify-content: center; transition: all 0.25s; }
+        #season-close:hover { border-color: var(--red); color: var(--red); background: rgba(208,28,66,0.12); }
+        .season-header { font-family: 'Orbitron', sans-serif; font-size: clamp(1.8rem, 4vw, 2.5rem); font-weight: 900; letter-spacing: 0.1em; color: #fff; text-align: center; margin-bottom: 2rem; }
+        #race-list-container { flex: 1; overflow-y: auto; overflow-x: hidden; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; padding-right: 1rem; align-content: start; }
+        #race-list-container::-webkit-scrollbar { width: 6px; }
+        #race-list-container::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 3px; }
+        #race-list-container::-webkit-scrollbar-thumb { background: var(--red); border-radius: 3px; }
+
+        /* ── Expandable Click-to-Open Race Cards ── */
+        .race-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 1.25rem 1.5rem; transition: transform 0.2s, background 0.2s, border-color 0.2s; position: relative; display: flex; flex-direction: column; cursor: pointer; align-self: start; }
+        .race-card:hover, .race-card.expanded { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.15); z-index: 10; }
+        .race-card.win-ver { border-left: 3px solid var(--cyan); }
+        .race-card.win-per { border-left: 3px solid var(--yellow); }
+        .race-card.loss { border-left: 3px solid var(--red); opacity: 0.8; }
+        
+        .race-header-grid { display: flex; flex-direction: column; justify-content: center; position: relative; padding-right: 1.5rem;}
+        .race-round { font-family: 'Rajdhani', sans-serif; font-size: 0.65rem; letter-spacing: 0.3em; color: rgba(255,255,255,0.4); text-transform: uppercase; margin-bottom: 0.2rem; }
+        .race-gp { font-family: 'Orbitron', sans-serif; font-size: 1.15rem; font-weight: 700; color: #fff; margin-bottom: 0.1rem; line-height: 1.2; }
+        .race-track { font-family: 'Space Grotesk', sans-serif; font-size: 0.75rem; color: rgba(255,255,255,0.5); }
+        
+        .expand-icon { position: absolute; right: 0; top: 50%; transform: translateY(-50%); color: rgba(255,255,255,0.3); font-size: 0.8rem; transition: transform 0.3s ease, color 0.3s ease; }
+        .race-card.expanded .expand-icon { transform: translateY(-50%) rotate(180deg); color: var(--red); }
+        
+        /* Grid transition for smooth accordion expansion */
+        .race-expand-content { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.4s cubic-bezier(0.19, 1, 0.22, 1); }
+        .race-card.expanded .race-expand-content { grid-template-rows: 1fr; }
+        .race-expand-inner { overflow: hidden; display: flex; flex-direction: column; gap: 0.75rem; padding-top: 0; transition: padding-top 0.4s cubic-bezier(0.19, 1, 0.22, 1), opacity 0.3s ease; opacity: 0; }
+        .race-card.expanded .race-expand-inner { padding-top: 1.25rem; opacity: 1; }
+
+        .race-stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-family: 'Rajdhani', sans-serif; font-size: 0.8rem; background: rgba(0,0,0,0.2); padding: 0.75rem; border-radius: 4px; border: 1px solid rgba(255,255,255,0.02);}
+        .rs-col { display: flex; flex-direction: column; gap: 0.2rem; }
+        .rs-label { font-size: 0.55rem; letter-spacing: 0.1em; color: rgba(255,255,255,0.4); text-transform: uppercase; }
+        .rs-val { font-weight: 700; color: #fff; display: flex; align-items: baseline; gap: 0.3rem;}
+        .rs-val span.dr { font-size: 0.65rem; color: rgba(255,255,255,0.5); }
+        .rs-full { grid-column: 1 / -1; border-top: 1px solid rgba(255,255,255,0.05); margin-top: 0.2rem; padding-top: 0.4rem;}
+        
+        .pos-1 { color: var(--yellow); }
+        .pos-other { color: rgba(255,255,255,0.7); }
+        .record-tag { display: inline-block; background: rgba(208,28,66,0.15); color: var(--red); padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.6rem; letter-spacing: 0.1em; margin-top: 0.2rem; border: 1px solid rgba(208,28,66,0.3);}
+        
+        .race-note { font-family: 'Space Grotesk', sans-serif; font-size: 0.75rem; color: rgba(255,255,255,0.7); line-height: 1.5; margin-top: auto; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.75rem;}
+
+        /* ── HOTSPOT TOOLTIP ── */
+        #hotspot-tooltip { position: fixed; z-index: 50; pointer-events: none; opacity: 0; transition: opacity 0.2s ease; transform: translate(-50%, calc(-100% - 14px)); }
+        #hotspot-tooltip.visible { opacity: 1; }
+        .tooltip-inner { background: rgba(0,6,14,0.95); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.1); border-top: 2px solid var(--red); padding: 0.5rem 0.9rem; font-family: 'Rajdhani', sans-serif; font-size: 0.65rem; letter-spacing: 0.2em; color: rgba(255,255,255,0.6); text-transform: uppercase; white-space: nowrap; border-radius: 3px; }
+        .tooltip-inner strong { color: #fff; display: block; font-size: 0.8rem; }
+
+        #flash { position: fixed; inset: 0; z-index: 150; background: #fff; opacity: 0; pointer-events: none; }
+
+        /* ── RESPONSIVE DESIGN ── */
+        @media (max-width: 900px) {
+            nav { padding: 1.25rem 1.5rem; flex-wrap: wrap; }
+            .nav-actions { gap: 1rem; }
+            .nav-brand-text { display: none; }
+            #data-strip { display: none; }
+            #live-readout { display: none; }
+            #team-info { display: none; }
+            #inspect-panel { left: 5%; width: 90%; transform: translateY(-40%) translateX(-20px); }
+            #inspect-panel.active { transform: translateY(-40%) translateX(0); }
+            .hero-title { font-size: 2.5rem; }
+            .panel-heading { font-size: 2rem; }
+            #season-overlay { padding: 5rem 1rem 1rem; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- CUSTOM CURSOR WRAPPERS (Hardware Accelerated) -->
+<div id="cursor-dot-wrapper" style="position: fixed; top: 0; left: 0; pointer-events: none; z-index: 10000; will-change: transform;">
+    <div class="custom-cursor-dot" id="cursor-dot"></div>
+</div>
+<div id="cursor-ring-wrapper" style="position: fixed; top: 0; left: 0; pointer-events: none; z-index: 9999; will-change: transform;">
+    <div class="custom-cursor-ring" id="cursor-ring"></div>
+</div>
+
+<!-- FLASH OVERLAY -->
+<div id="flash"></div>
+
+<canvas id="webgl"></canvas>
+<div id="vignette"></div>
+
+<!-- ═══ LOADING SCREEN ═══ -->
+<div id="loading-screen">
+    <div class="grid-bg"></div>
+    <div class="corner tl"></div>
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div class="corner br"></div>
+
+    <div style="position:relative;z-index:10;text-align:center;">
+        <div style="font-family:'Rajdhani',sans-serif;font-size:0.6rem;letter-spacing:0.55em;color:rgba(255,255,255,0.2);margin-bottom:2.5rem;text-transform:uppercase;">
+            ORACLE RED BULL RACING — MK-7 FACILITY
+        </div>
+        <div id="load-title">
+            RB19
+            <div class="red-stroke" aria-hidden="true">RB19</div>
+        </div>
+        <div style="font-family:'Rajdhani',sans-serif;font-size:0.65rem;letter-spacing:0.5em;color:rgba(255,255,255,0.18);margin-top:1rem;text-transform:uppercase;">
+            THE ETERNAL APEX
+        </div>
+        <div id="progress-track">
+            <div id="progress-fill"></div>
+        </div>
+        <div id="load-status">ESTABLISHING UPLINK...</div>
+        <button id="btn-enter" class="btn-enter interactive" disabled>INITIALIZING</button>
+        <div style="margin-top:3.5rem;font-family:'Rajdhani',sans-serif;font-size:0.55rem;letter-spacing:0.3em;color:rgba(255,255,255,0.12);text-transform:uppercase;">
+            HONDA RBPTH001 &nbsp;·&nbsp; 1.6L V6 HYBRID &nbsp;·&nbsp; 900+ HP
+        </div>
+    </div>
+</div>
+
+<!-- ═══ SHOWROOM OVERLAY ═══ -->
+<div id="showroom">
+    <div id="showroom-top" class="interactive">
+        <div class="showroom-title">GALLERY INSPECTION</div>
+    </div>
+    <div id="showroom-close" class="interactive">×</div>
+    <div id="showroom-controls" class="interactive">
+        <button class="ctrl-btn active" data-view="free">FREE VIEW</button>
+        <button class="ctrl-btn" data-view="front">FRONT</button>
+        <button class="ctrl-btn" data-view="side">PROFILE</button>
+        <button class="ctrl-btn" data-view="top">TOP</button>
+        <button class="ctrl-btn" data-view="rear">REAR</button>
+        <button class="ctrl-btn" data-view="iso">ISO</button>
+        <button class="ctrl-btn" id="btn-wireframe">WIREFRAME</button>
+    </div>
+</div>
+
+<!-- ═══ SEASON OVERLAY ═══ -->
+<div id="season-overlay">
+    <div id="season-close" class="interactive">×</div>
+    <div class="season-header">2023 RACE RECORD</div>
+    <div id="race-list-container" class="interactive">
+        <!-- Injected via JS -->
+    </div>
+</div>
+
+<!-- ═══ MAIN UI LAYER ═══ -->
+<div id="ui">
+
+    <nav class="interactive">
+        <div class="nav-brand">
+            <div class="nav-brand-icon">RBR</div>
+            <span class="nav-brand-text">Oracle Red Bull Racing</span>
+        </div>
+        <div class="nav-actions">
+            <div class="nav-status">
+                <div class="nav-status-dot"></div>
+                LIVE TELEMETRY
+            </div>
+            <button class="nav-btn interactive" id="open-season-btn">2023 SEASON</button>
+            <button class="nav-btn interactive" id="open-showroom-btn">GALLERY</button>
+        </div>
+    </nav>
+
+    <div id="data-strip">
+        <div class="strip-item"><div class="strip-label">Season</div><div class="strip-value red">2023</div></div>
+        <div class="strip-item"><div class="strip-label">Victories</div><div class="strip-value">21/22</div></div>
+        <div class="strip-item"><div class="strip-label">Points</div><div class="strip-value">860</div></div>
+        <div class="strip-item"><div class="strip-label">Chassis</div><div class="strip-value" style="font-size:0.75rem;">RB19</div></div>
+    </div>
+
+    <div id="live-readout">
+        <div class="readout-item"><div class="readout-label">Engine Load</div><div class="readout-value" id="val-rpm">— <span>RPM</span></div><div class="readout-bar"><div class="readout-bar-fill" id="bar-rpm"></div></div></div>
+        <div class="readout-item"><div class="readout-label">ERS Deploy</div><div class="readout-value" id="val-ers">— <span>kJ</span></div><div class="readout-bar"><div class="readout-bar-fill" id="bar-ers"></div></div></div>
+        <div class="readout-item"><div class="readout-label">Downforce</div><div class="readout-value" id="val-df">— <span>kg</span></div><div class="readout-bar"><div class="readout-bar-fill" id="bar-df"></div></div></div>
+    </div>
+
+    <div id="team-info">
+        <div class="team-header">TEAM OVERVIEW</div>
+        <div class="team-row"><div class="team-label">Principal</div><div class="team-val">C. Horner</div></div>
+        <div class="team-row"><div class="team-label">CTO</div><div class="team-val">A. Newey</div></div>
+        <div class="team-row"><div class="team-label">Base</div><div class="team-val">Milton Keynes</div></div>
+        <div class="team-row"><div class="team-label">Poles</div><div class="team-val">14</div></div>
+        <div class="team-row"><div class="team-label">1-2 Finishes</div><div class="team-val">6</div></div>
+    </div>
+
+    <div id="hero-text">
+        <div class="hero-label">2023 FIA FORMULA ONE WORLD CHAMPION</div>
+        <div class="hero-title">THE APEX</div>
+        <div class="hero-hint">CLICK MARKERS TO INSPECT</div>
+    </div>
+
+    <div id="inspect-panel">
+        <div class="panel-card">
+            <button class="btn-back interactive" id="btn-close-inspect">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+                OVERVIEW
+            </button>
+            <div class="panel-card-header stagger-ui">
+                <div class="panel-tag" id="panel-subtitle">SUBTITLE</div>
+                <button class="panel-close-btn interactive" id="btn-close-inspect-2">×</button>
+            </div>
+            <div class="panel-body">
+                <div class="panel-heading stagger-ui" id="panel-title">TITLE</div>
+                <p class="panel-desc stagger-ui" id="panel-desc">Description.</p>
+                <div class="panel-stats stagger-ui" id="panel-stats"></div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Hotspot Tooltip -->
+<div id="hotspot-tooltip">
+    <div class="tooltip-inner" id="tooltip-inner"></div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls }  from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader }     from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader }    from 'three/addons/loaders/DRACOLoader.js';
+import { RGBELoader }     from 'three/addons/loaders/RGBELoader.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }     from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass }     from 'three/addons/postprocessing/ShaderPass.js';
+import { RGBShiftShader } from 'three/addons/shaders/RGBShiftShader.js';
+import { OutputPass }     from 'three/addons/postprocessing/OutputPass.js';
+
+// ──────────────────────────────────────────────────────────────
+// CUSTOM CURSOR ENGINE (Hardware Accelerated, No Jitter)
+const dotWrapper = document.getElementById('cursor-dot-wrapper');
+const ringWrapper = document.getElementById('cursor-ring-wrapper');
+const cursorDot = document.getElementById('cursor-dot');
+const cursorRing = document.getElementById('cursor-ring');
+let mouseX = window.innerWidth / 2, mouseY = window.innerHeight / 2;
+let ringX = mouseX, ringY = mouseY;
+
+window.addEventListener('mousemove', (e) => {
+    mouseX = e.clientX; mouseY = e.clientY;
+    // Instantly update the dot wrapper using 3D transform for GPU acceleration
+    dotWrapper.style.transform = `translate3d(${mouseX}px, ${mouseY}px, 0)`;
+});
+
+function animateCursor() {
+    ringX += (mouseX - ringX) * 0.25;
+    ringY += (mouseY - ringY) * 0.25;
+    // Smoothly interpolate the outer ring wrapper
+    ringWrapper.style.transform = `translate3d(${ringX}px, ${ringY}px, 0)`;
+    requestAnimationFrame(animateCursor);
+}
+animateCursor();
+
+function bindCursorHover() {
+    document.querySelectorAll('.interactive').forEach(el => {
+        el.addEventListener('mouseenter', () => { cursorDot.classList.add('hover'); cursorRing.classList.add('hover'); });
+        el.addEventListener('mouseleave', () => { cursorDot.classList.remove('hover'); cursorRing.classList.remove('hover'); });
+    });
+}
+bindCursorHover();
+
+// ──────────────────────────────────────────────────────────────
+// CONFIG & STATE
+const MODEL_URL = './rb19-model.glb'; 
+
+let renderer, scene, camera, controls, composer;
+let modelGroup, carModel, particlesMesh;
+let keyLight, rimLight, fillLight, groundLight, galleryLight, ambient, bloomPass, rgbShift;
+let originalMaterials = new Map();
+let isWireframe = false, isShowroom = false, isTelemetry = false, isSeasonMode = false;
+let hotspotGroup, hotspotMeshes = [];
+const raycaster = new THREE.Raycaster();
+const mouseVec = new THREE.Vector2(-9999, -9999);
+let hoveredHotspot = null;
+
+const liveData = [
+    { el: document.getElementById('val-rpm'), bar: document.getElementById('bar-rpm'), unit: 'RPM', min: 14600, max: 15200, curr: 14600, targ: 14800, p: 0.95 },
+    { el: document.getElementById('val-ers'), bar: document.getElementById('bar-ers'), unit: 'kJ',  min: 390, max: 420, curr: 390, targ: 400, p: 0.85 },
+    { el: document.getElementById('val-df'),  bar: document.getElementById('bar-df'),  unit: 'kg',  min: 1950, max: 2100, curr: 1950, targ: 2000, p: 0.75 }
+];
+
+// ──────────────────────────────────────────────────────────────
+// MASSIVE 2023 RACE DATASET
+const seasonData = [
+    { round: 1, gp: 'Bahrain Grand Prix', track: 'Sakhir', ver: 'P1', per: 'P2', pole: 'VER (1:29.708)', fl: 'ZHO', sprint: null, record: null, note: 'A commanding 1-2 finish to open the season in dominant style.' },
+    { round: 2, gp: 'Saudi Arabian Grand Prix', track: 'Jeddah', ver: 'P2', per: 'P1', pole: 'PER (1:28.265)', fl: 'VER', sprint: null, record: null, note: 'Perez converts pole to victory; Max recovers brilliantly from P15.' },
+    { round: 3, gp: 'Australian Grand Prix', track: 'Melbourne', ver: 'P1', per: 'P5', pole: 'VER (1:16.732)', fl: 'PER', sprint: null, record: null, note: 'Verstappen survives a chaotic red-flagged finish to win.' },
+    { round: 4, gp: 'Azerbaijan Grand Prix', track: 'Baku', ver: 'P2', per: 'P1', pole: 'LEC', fl: 'RUS', sprint: 'PER P1, VER P3', record: null, note: 'Perez masters the streets, winning both the Sprint and the Grand Prix.' },
+    { round: 5, gp: 'Miami Grand Prix', track: 'Miami', ver: 'P1', per: 'P2', pole: 'PER (1:26.841)', fl: 'VER', sprint: null, record: null, note: 'Max charges from P9 to victory with stunning hard tire management.' },
+    { round: 6, gp: 'Monaco Grand Prix', track: 'Monte Carlo', ver: 'P1', per: 'P16', pole: 'VER (1:11.365)', fl: 'HAM', sprint: null, record: null, note: 'Verstappen brushes the walls in a legendary quali, survives late rain to win.' },
+    { round: 7, gp: 'Spanish Grand Prix', track: 'Barcelona', ver: 'P1', per: 'P4', pole: 'VER (1:12.272)', fl: 'VER', sprint: null, record: '3rd Career Grand Slam', note: 'A dominant Grand Slam for Verstappen (Pole, Win, FL, Led every lap).' },
+    { round: 8, gp: 'Canadian Grand Prix', track: 'Montreal', ver: 'P1', per: 'P6', pole: 'VER (1:25.858)', fl: 'PER', sprint: null, record: 'Red Bull 100th Win', note: 'Red Bull Racing secures their historic 100th victory in Formula 1.' },
+    { round: 9, gp: 'Austrian Grand Prix', track: 'Spielberg', ver: 'P1', per: 'P3', pole: 'VER (1:04.391)', fl: 'VER', sprint: 'VER P1, PER P2', record: null, note: 'Verstappen sweeps Sprint and Race at Red Bull\'s home turf.' },
+    { round: 10, gp: 'British Grand Prix', track: 'Silverstone', ver: 'P1', per: 'P6', pole: 'VER (1:26.720)', fl: 'VER', sprint: null, record: 'Ties McLaren (11 Wins)', note: 'Red Bull claims their 11th consecutive team victory.' },
+    { round: 11, gp: 'Hungarian Grand Prix', track: 'Budapest', ver: 'P1', per: 'P3', pole: 'HAM', fl: 'VER', sprint: null, record: 'Most Consec. Team Wins (12)', note: 'A record-breaking 12th consecutive win for the team.' },
+    { round: 12, gp: 'Belgian Grand Prix', track: 'Spa-Francorchamps', ver: 'P1', per: 'P2', pole: 'LEC (VER penalty)', fl: 'HAM', sprint: 'VER P1, PER DNF', record: null, note: 'Verstappen wins from P6 penalty with a dominant 1-2 finish.' },
+    { round: 13, gp: 'Dutch Grand Prix', track: 'Zandvoort', ver: 'P1', per: 'P4', pole: 'VER (1:10.567)', fl: 'ALO', sprint: null, record: 'Ties Consec. Driver Wins (9)', note: 'Max equals Vettel\'s record of 9 consecutive driver wins in chaotic rain.' },
+    { round: 14, gp: 'Italian Grand Prix', track: 'Monza', ver: 'P1', per: 'P2', pole: 'SAI', fl: 'PIA', sprint: null, record: 'Most Consec. Driver Wins (10)', note: 'Verstappen sets the all-time record with his 10th consecutive win.' },
+    { round: 15, gp: 'Singapore Grand Prix', track: 'Marina Bay', ver: 'P5', per: 'P8', pole: 'SAI', fl: 'HAM', sprint: null, record: null, note: 'The sole anomaly. Setup issues end the team\'s winning streak.' },
+    { round: 16, gp: 'Japanese Grand Prix', track: 'Suzuka', ver: 'P1', per: 'DNF', pole: 'VER (1:28.877)', fl: 'VER', sprint: null, record: 'Constructors\' Champions', note: 'Verstappen dominates, securing the Constructors\' Championship early.' },
+    { round: 17, gp: 'Qatar Grand Prix', track: 'Lusail', ver: 'P1', per: 'P10', pole: 'VER (1:23.778)', fl: 'VER', sprint: 'PIA P1, VER P2', record: 'Drivers\' Champion (VER)', note: 'Max officially crowned 3x World Champion during the Saturday Sprint.' },
+    { round: 18, gp: 'United States Grand Prix', track: 'Austin', ver: 'P1', per: 'P4', pole: 'LEC', fl: 'TSU', sprint: 'VER P1, PER P5', record: '50th Career Win (VER)', note: 'Verstappen claims his 50th career victory holding off Hamilton.' },
+    { round: 19, gp: 'Mexico City Grand Prix', track: 'Mexico City', ver: 'P1', per: 'DNF', pole: 'LEC', fl: 'NOR', sprint: null, record: 'Most Wins in a Season (16)', note: 'A record 16th win of the season for Verstappen; heartbreak for Perez at home.' },
+    { round: 20, gp: 'São Paulo Grand Prix', track: 'Interlagos', ver: 'P1', per: 'P4', pole: 'VER (1:10.727)', fl: 'NOR', sprint: 'VER P1, PER P3', record: null, note: 'Verstappen sweeps the Sprint and Grand Prix once again.' },
+    { round: 21, gp: 'Las Vegas Grand Prix', track: 'Las Vegas Strip', ver: 'P1', per: 'P3', pole: 'LEC', fl: 'PIA', sprint: null, record: null, note: 'An epic victory under the lights of the neon strip despite a penalty.' },
+    { round: 22, gp: 'Abu Dhabi Grand Prix', track: 'Yas Marina', ver: 'P1', per: 'P2', pole: 'VER (1:23.445)', fl: 'VER', sprint: null, record: '19 Wins, 1000+ Laps Led', note: 'A fitting 1-2 finish to conclude the most dominant season in history.' }
+];
+
+function initSeasonLog() {
+    const container = document.getElementById('race-list-container');
+    let html = '';
+    
+    seasonData.forEach(race => {
+        let cardClass = 'race-card interactive';
+        let winClass = '';
+        if (race.ver === 'P1') winClass = 'win-ver';
+        else if (race.per === 'P1') winClass = 'win-per';
+        else winClass = 'loss';
+        
+        const verColor = race.ver === 'P1' ? 'pos-1' : 'pos-other';
+        const perColor = race.per === 'P1' ? 'pos-1' : 'pos-other';
+        
+        // Added onclick expansion logic right into the HTML template
+        html += `
+            <div class="${cardClass} ${winClass}" onclick="this.classList.toggle('expanded')">
+                <div class="race-header-grid">
+                    <div class="race-round">ROUND ${race.round}</div>
+                    <div class="race-gp">${race.gp}</div>
+                    <div class="race-track">${race.track}</div>
+                    <div class="expand-icon">▼</div>
+                </div>
+                
+                <div class="race-expand-content">
+                    <div class="race-expand-inner">
+                        <div class="race-stats-grid">
+                            <div class="rs-col">
+                                <span class="rs-label">VER Finish</span>
+                                <span class="rs-val ${verColor}">${race.ver}</span>
+                            </div>
+                            <div class="rs-col">
+                                <span class="rs-label">PER Finish</span>
+                                <span class="rs-val ${perColor}">${race.per}</span>
+                            </div>
+                            <div class="rs-col rs-full">
+                                <span class="rs-label">Pole Position</span>
+                                <span class="rs-val" style="font-size:0.9rem;">${race.pole}</span>
+                            </div>
+                            <div class="rs-col rs-full">
+                                <span class="rs-label">Fastest Lap</span>
+                                <span class="rs-val" style="font-size:0.9rem;">${race.fl}</span>
+                            </div>
+                            ${race.sprint ? `
+                            <div class="rs-col rs-full">
+                                <span class="rs-label">Sprint Results</span>
+                                <span class="rs-val" style="font-size:0.8rem;color:rgba(255,255,255,0.7);">${race.sprint}</span>
+                            </div>` : ''}
+                            ${race.record ? `
+                            <div class="rs-col rs-full">
+                                <span class="record-tag">RECORD: ${race.record}</span>
+                            </div>` : ''}
+                        </div>
+                        <div class="race-note">${race.note}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+    bindCursorHover(); // Re-bind custom cursor to new interactive cards
+}
+
+// ──────────────────────────────────────────────────────────────
+// TELEMETRY HOTSPOT DATA
+const HOTSPOTS = [
+    {
+        id: 'floor',
+        title: 'FLOOR',
+        subtitle: 'AERODYNAMICS',
+        desc: 'Perfected venturi tunnels beneath the floor generate immense ground‑effect downforce with minimal drag — the cornerstone of the RB19\'s relentless lap‑time advantage.',
+        stats: [{ l: 'DRS Delta', v: '+12 KPH' }, { l: 'Downforce', v: '2000 kg' }, { l: 'Drag Coeff', v: '0.7 Cd' }, { l: 'Balance', v: '53% Rear' }],
+        pos: new THREE.Vector3(1.8, 0.2, 0.5),
+        camPos: new THREE.Vector3(4.0, 0.5, 3.0)
+    },
+    {
+        id: 'power',
+        title: 'HRC',
+        subtitle: 'POWER UNIT',
+        desc: 'The Honda RBPTH001 1.6‑litre V6 hybrid screams to 15,000 RPM. ERS deployment is seamlessly managed to deliver 160hp of electric punch out of every slow corner.',
+        stats: [{ l: 'Total Power', v: '900+ HP' }, { l: 'MGU-K', v: '160 HP' }, { l: 'Max RPM', v: '15,000' }, { l: 'Fuel Flow', v: '100 kg/h' }],
+        pos: new THREE.Vector3(0, 1.2, -1.5),
+        camPos: new THREE.Vector3(-3.0, 2.5, -4.0)
+    },
+    {
+        id: 'driver',
+        title: 'MAX',
+        subtitle: 'WORLD CHAMPION',
+        desc: 'Verstappen didn\'t just win — he obliterated the record books. 19 victories in a single season, 1003 laps led, a 95.4% podium conversion rate across 22 rounds.',
+        stats: [{ l: 'Wins', v: '19/22' }, { l: 'Podiums', v: '21' }, { l: 'Laps Led', v: '1,003' }, { l: 'Points', v: '575' }],
+        pos: new THREE.Vector3(0, 1.0, 0.5),
+        camPos: new THREE.Vector3(2.5, 1.8, 2.5)
+    },
+    {
+        id: 'suspension',
+        title: 'KINEMATICS',
+        subtitle: 'CHASSIS & SUSPENSION',
+        desc: 'Adrian Newey\'s masterclass in suspension geometry. The aggressive anti-dive front and anti-squat rear suspension kept the aerodynamic platform perfectly stable under heavy braking.',
+        stats: [{ l: 'Front', v: 'Pull-rod' }, { l: 'Rear', v: 'Push-rod' }, { l: 'Weight', v: '798 kg' }, { l: 'Wheelbase', v: '3600 mm' }],
+        pos: new THREE.Vector3(0.8, 0.5, 3.0),
+        camPos: new THREE.Vector3(3.0, 1.0, 5.0)
+    },
+    {
+        id: 'perez',
+        title: 'CHECO',
+        subtitle: 'CONSTRUCTORS 1-2',
+        desc: 'Sergio \'Checo\' Perez secured two crucial early-season victories and played a vital role in Red Bull Racing achieving their first-ever 1-2 finish in the Drivers\' Championship.',
+        stats: [{ l: 'Wins', v: '2' }, { l: 'Podiums', v: '9' }, { l: 'Points', v: '285' }, { l: 'Fastest Laps', v: '2' }],
+        pos: new THREE.Vector3(-1.5, 0.7, 0.0),
+        camPos: new THREE.Vector3(-4.0, 1.2, 2.0)
+    },
+    {
+        id: 'brakes',
+        title: 'PIRELLI',
+        subtitle: 'BRAKES & TYRES',
+        desc: 'Operating at over 1,000°C, the carbon-fibre brake discs provide massive stopping power. Managing Pirelli tyre degradation is critical to race strategy.',
+        stats: [{ l: 'Brake Temp', v: '1000°C+' }, { l: 'Decel', v: '5G' }, { l: 'Rim', v: '18 Inch' }, { l: 'Pit Stop', v: '1.9s' }],
+        pos: new THREE.Vector3(1.8, 0.6, 3.2),
+        camPos: new THREE.Vector3(3.5, 0.8, 4.5)
+    },
+    {
+        id: 'drs',
+        title: 'ACTUATOR',
+        subtitle: 'DRAG REDUCTION SYSTEM',
+        desc: 'When within 1 second of the car ahead, the DRS flap opens, shedding aerodynamic drag and providing a crucial top-speed advantage for overtaking.',
+        stats: [{ l: 'Delta', v: '+15 km/h' }, { l: 'Type', v: 'Hydraulic' }, { l: 'V-Max', v: '340+ km/h' }, { l: 'Zones', v: 'Track Specific' }],
+        pos: new THREE.Vector3(0, 1.5, -4.5),
+        camPos: new THREE.Vector3(3.0, 2.5, -6.0)
+    }
+];
+
+// ──────────────────────────────────────────────────────────────
+// SCENE INIT
+scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x000810, 0.014);
+
+camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(0, 2, 9);
+
+galleryLight = new THREE.DirectionalLight(0xffffff, 0);
+galleryLight.position.set(0, 0, 1);
+camera.add(galleryLight);
+scene.add(camera);
+
+renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#webgl'), antialias: true, alpha: true, powerPreference: 'high-performance' });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.3, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.045;
+controls.enableZoom = true;
+controls.minDistance = 4;
+controls.maxDistance = 14;
+controls.maxPolarAngle = Math.PI / 2 + 0.12;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.4;
+
+// ── LIGHTS ──
+ambient = new THREE.AmbientLight(0xffffff, 0.35);
+scene.add(ambient);
+
+keyLight = new THREE.SpotLight(0xdff0ff, 14);
+keyLight.position.set(8, 14, 8);
+keyLight.angle = Math.PI / 6;
+keyLight.penumbra = 0.75;
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.setScalar(2048);
+scene.add(keyLight);
+
+rimLight = new THREE.SpotLight(0xcc1e4a, 10);
+rimLight.position.set(-9, 5, -9);
+scene.add(rimLight);
+
+fillLight = new THREE.SpotLight(0xffc72c, 4);
+fillLight.position.set(9, 2, -4);
+scene.add(fillLight);
+
+groundLight = new THREE.PointLight(0x001a33, 5, 20);
+groundLight.position.set(0, 0.5, 0);
+scene.add(groundLight);
+
+// ── HDR ENV ──
+new RGBELoader()
+    .setPath('https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/')
+    .load('studio_small_09_1k.hdr', tx => {
+        tx.mapping = THREE.EquirectangularReflectionMapping;
+        scene.environment = tx;
+    });
+
+// ── FLOOR ──
+const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(300, 300),
+    new THREE.MeshStandardMaterial({ color: 0x030303, roughness: 0.08, metalness: 0.85 })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -0.3;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const grid = new THREE.GridHelper(300, 120, 0xcc1e4a, 0x00111e);
+grid.position.y = -0.29;
+grid.material.opacity = 0.07;
+grid.material.transparent = true;
+scene.add(grid);
+
+// ── ATMOSPHERIC PARTICLES ──
+const particlesGeo = new THREE.BufferGeometry();
+const particlesCount = 800;
+const posArray = new Float32Array(particlesCount * 3);
+for(let i=0; i < particlesCount * 3; i++) {
+    posArray[i] = (Math.random() - 0.5) * 40; 
+}
+particlesGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+const particlesMat = new THREE.PointsMaterial({
+    size: 0.03, color: 0x00d4ff, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending
+});
+particlesMesh = new THREE.Points(particlesGeo, particlesMat);
+scene.add(particlesMesh);
+
+// ── POST-PROCESSING ──
+composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+
+bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.22, 0.4, 0.52);
+composer.addPass(bloomPass);
+
+rgbShift = new ShaderPass(RGBShiftShader);
+rgbShift.uniforms['amount'].value = 0.0008;
+composer.addPass(rgbShift);
+composer.addPass(new OutputPass());
+
+// ── MODEL GROUP ──
+modelGroup = new THREE.Group();
+scene.add(modelGroup);
+hotspotGroup = new THREE.Group();
+modelGroup.add(hotspotGroup);
+
+// ──────────────────────────────────────────────────────────────
+// HOTSPOT CREATION
+function buildHotspotSprite() {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 128;
+    const ctx = cv.getContext('2d');
+
+    ctx.setLineDash([15, 10]);
+    ctx.beginPath(); ctx.arc(64, 64, 50, 0, 2*Math.PI);
+    ctx.strokeStyle = 'rgba(0,212,255,0.6)'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.beginPath(); ctx.arc(64, 64, 38, 0, 2*Math.PI);
+    ctx.strokeStyle = 'rgba(0,212,255,0.4)'; ctx.lineWidth = 2; ctx.stroke();
+
+    const g = ctx.createRadialGradient(64,64,0,64,64,18);
+    g.addColorStop(0,'rgba(255,255,255,1)');
+    g.addColorStop(0.4,'rgba(0,212,255,0.9)');
+    g.addColorStop(1,'rgba(0,212,255,0)');
+    ctx.beginPath(); ctx.arc(64,64,18,0,2*Math.PI);
+    ctx.fillStyle = g; ctx.fill();
+
+    return new THREE.CanvasTexture(cv);
+}
+
+function createHotspots() {
+    const mat = new THREE.SpriteMaterial({
+        map: buildHotspotSprite(), transparent: true, blending: THREE.AdditiveBlending, depthTest: false
+    });
+
+    HOTSPOTS.forEach((d, i) => {
+        const sp = new THREE.Sprite(mat.clone());
+        sp.position.copy(d.pos);
+        sp.scale.set(0.55, 0.55, 1);
+        sp.renderOrder = 999;
+        sp.userData = { id: d.id, index: i, label: d.subtitle, title: d.title };
+        hotspotGroup.add(sp);
+        hotspotMeshes.push(sp);
+    });
+}
+
+// ──────────────────────────────────────────────────────────────
+// RAYCASTING / INTERACTIONS
+const tooltip = document.getElementById('hotspot-tooltip');
+const tooltipInner = document.getElementById('tooltip-inner');
+
+window.addEventListener('mousemove', e => {
+    if (isShowroom || isTelemetry || isSeasonMode) {
+        tooltip.classList.remove('visible');
+        return;
+    }
+    raycaster.setFromCamera(new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1), camera);
+    const hits = raycaster.intersectObjects(hotspotMeshes);
+    if (hits.length) {
+        const d = hits[0].object.userData;
+        hoveredHotspot = hits[0].object;
+        tooltipInner.innerHTML = `<strong>${d.title}</strong>${d.label}`;
+        tooltip.style.left = e.clientX + 'px';
+        tooltip.style.top  = e.clientY + 'px';
+        tooltip.classList.add('visible');
+        cursorDot.classList.add('hover');
+        cursorRing.classList.add('hover');
+    } else {
+        hoveredHotspot = null;
+        tooltip.classList.remove('visible');
+        if(!e.target.closest('.interactive')) {
+            cursorDot.classList.remove('hover');
+            cursorRing.classList.remove('hover');
+        }
+    }
+});
+
+window.addEventListener('click', e => {
+    if (isShowroom || isTelemetry || isSeasonMode) return;
+    raycaster.setFromCamera(new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1), camera);
+    const hits = raycaster.intersectObjects(hotspotMeshes);
+    if (hits.length) {
+        openInspect(HOTSPOTS[hits[0].object.userData.index]);
+    }
+});
+
+// ──────────────────────────────────────────────────────────────
+// INSPECT PANEL 
+function openInspect(data) {
+    isTelemetry = true;
+    controls.autoRotate = false;
+    tooltip.classList.remove('visible');
+    cursorDot.classList.remove('hover'); cursorRing.classList.remove('hover');
+
+    document.getElementById('hero-text').classList.remove('visible');
+    document.getElementById('live-readout').classList.remove('visible');
+    document.getElementById('data-strip').classList.remove('visible');
+    document.getElementById('team-info').classList.remove('visible');
+
+    hotspotMeshes.forEach(h => {
+        gsap.to(h.material, { opacity: h.userData.id === data.id ? 1 : 0, duration: 0.4 });
+        if (h.userData.id === data.id) gsap.to(h.scale, { x: 0.8, y: 0.8, duration: 0.4 });
+    });
+
+    const wPos  = new THREE.Vector3().copy(data.pos).applyMatrix4(modelGroup.matrixWorld);
+    const wCam  = new THREE.Vector3().copy(data.camPos).applyMatrix4(modelGroup.matrixWorld);
+    gsap.to(camera.position, { x: wCam.x, y: wCam.y, z: wCam.z, duration: 2, ease: 'power3.inOut' });
+    gsap.to(controls.target, { x: wPos.x, y: wPos.y, z: wPos.z, duration: 2, ease: 'power3.inOut' });
+
+    document.getElementById('panel-subtitle').textContent = data.subtitle;
+    document.getElementById('panel-title').textContent = data.title;
+    document.getElementById('panel-desc').textContent = data.desc;
+    document.getElementById('panel-stats').innerHTML = data.stats.map(s =>
+        `<div class="stat-cell"><div class="stat-cell-label">${s.l}</div><div class="stat-cell-value">${s.v}</div></div>`
+    ).join('');
+
+    gsap.set('.stagger-ui', { opacity: 0, y: 20 });
+
+    setTimeout(() => {
+        document.getElementById('inspect-panel').classList.add('active');
+        gsap.to('.stagger-ui', { opacity: 1, y: 0, duration: 0.6, stagger: 0.1, ease: 'power2.out', delay: 0.2 });
+    }, 900);
+}
+
+function closeInspect() {
+    document.getElementById('inspect-panel').classList.remove('active');
+
+    gsap.to(camera.position, { x: 0, y: 1.5, z: 9, duration: 2, ease: 'power3.inOut' });
+    gsap.to(controls.target, { x: 0, y: 0.3, z: 0, duration: 2, ease: 'power3.inOut',
+        onComplete: () => {
+            isTelemetry = false;
+            controls.autoRotate = true;
+            document.getElementById('hero-text').classList.add('visible');
+            document.getElementById('live-readout').classList.add('visible');
+            document.getElementById('data-strip').classList.add('visible');
+            document.getElementById('team-info').classList.add('visible');
+            hotspotMeshes.forEach(h => {
+                gsap.to(h.material, { opacity: 1, duration: 0.6 });
+                gsap.to(h.scale, { x: 0.55, y: 0.55, duration: 0.4 });
+            });
+        }
+    });
+}
+
+document.getElementById('btn-close-inspect').addEventListener('click', closeInspect);
+document.getElementById('btn-close-inspect-2').addEventListener('click', closeInspect);
+
+// ──────────────────────────────────────────────────────────────
+// SEASON OVERLAY LOGIC
+document.getElementById('open-season-btn').addEventListener('click', () => {
+    if (!carModel || isTelemetry || isShowroom) return;
+    isSeasonMode = true;
+    
+    document.getElementById('season-overlay').classList.add('active');
+    
+    document.getElementById('hero-text').classList.remove('visible');
+    document.getElementById('live-readout').classList.remove('visible');
+    document.getElementById('data-strip').classList.remove('visible');
+    document.getElementById('team-info').classList.remove('visible');
+    hotspotGroup.visible = false;
+    
+    gsap.to(ambient, { intensity: 0.1, duration: 1 });
+    gsap.to(keyLight, { intensity: 5, duration: 1 });
+    gsap.to(rimLight, { intensity: 4, duration: 1 });
+    gsap.to(fillLight, { intensity: 2, duration: 1 });
+    controls.autoRotateSpeed = 0.2;
+});
+
+document.getElementById('season-close').addEventListener('click', () => {
+    isSeasonMode = false;
+    document.getElementById('season-overlay').classList.remove('active');
+    
+    document.getElementById('hero-text').classList.add('visible');
+    document.getElementById('live-readout').classList.add('visible');
+    document.getElementById('data-strip').classList.add('visible');
+    document.getElementById('team-info').classList.add('visible');
+    hotspotGroup.visible = true;
+    
+    gsap.to(ambient, { intensity: 0.35, duration: 1 });
+    gsap.to(keyLight, { intensity: 14, duration: 1 });
+    gsap.to(rimLight, { intensity: 10, duration: 1 });
+    gsap.to(fillLight, { intensity: 4, duration: 1 });
+    controls.autoRotateSpeed = 0.4;
+});
+
+initSeasonLog();
+
+// ──────────────────────────────────────────────────────────────
+// MODEL LOADING
+const gltfLoader = new GLTFLoader();
+const draco = new DRACOLoader();
+draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+gltfLoader.setDRACOLoader(draco);
+
+const progressFill = document.getElementById('progress-fill');
+const loadStatus   = document.getElementById('load-status');
+const btnEnter     = document.getElementById('btn-enter');
+
+function loadModel() {
+    gltfLoader.load(MODEL_URL, gltf => {
+        if (carModel) modelGroup.remove(carModel);
+        carModel = gltf.scene;
+
+        const box = new THREE.Box3().setFromObject(carModel);
+        const sz  = box.getSize(new THREE.Vector3());
+        const c   = box.getCenter(new THREE.Vector3());
+
+        carModel.position.x -= c.x;
+        carModel.position.z -= c.z;
+
+        const sc = 10 / Math.max(sz.x, sz.y, sz.z);
+        carModel.scale.setScalar(sc);
+        carModel.updateMatrixWorld(true);
+
+        const nb = new THREE.Box3().setFromObject(carModel);
+        carModel.position.y = -nb.min.y - 0.3;
+
+        carModel.traverse(c => {
+            if (!c.isMesh) return;
+            c.castShadow = c.receiveShadow = true;
+            if (c.material) {
+                c.material.envMapIntensity = 1.1;
+                c.material.roughness = Math.min(c.material.roughness ?? 0.3, 0.35);
+                originalMaterials.set(c.uuid, c.material);
+            }
+        });
+
+        modelGroup.add(carModel);
+        createHotspots();
+
+        progressFill.style.width = '100%';
+        loadStatus.innerHTML = '<span style="color:var(--red)">▸</span>&nbsp;SYSTEMS READY';
+        btnEnter.textContent = 'ENTER APEX';
+        btnEnter.classList.add('ready');
+        btnEnter.disabled = false;
+
+    }, xhr => {
+        const p = (xhr.loaded / xhr.total) * 100;
+        if (progressFill) progressFill.style.width = p + '%';
+        const stages = ['DOWNLOADING TELEMETRY...', 'CALIBRATING SENSORS...', 'MAPPING AERODYNAMICS...', 'SYNCING ECU DATA...'];
+        loadStatus.textContent = stages[Math.floor(p / 25)] || stages[3];
+    }, err => {
+        console.error(err);
+        loadStatus.innerHTML = '<span style="color:var(--red)">ERROR — ASSET UNAVAILABLE</span>';
+        btnEnter.textContent = 'OFFLINE';
+    });
+}
+
+loadModel();
+
+// ──────────────────────────────────────────────────────────────
+// ENTER SEQUENCE
+btnEnter.addEventListener('click', () => {
+    if (!carModel) return;
+
+    ambient.intensity = 0; keyLight.intensity = 0; rimLight.intensity = 0; fillLight.intensity = 0;
+
+    camera.position.set(0, 0.2, 5);
+    controls.target.set(0, 0.3, 0);
+
+    modelGroup.rotation.set(0, Math.PI * 1.5, 0);
+    modelGroup.position.set(0, 0, 0);
+
+    gsap.fromTo('#flash', { opacity: 0.6 }, { opacity: 0, duration: 0.7, ease: 'power2.out' });
+
+    gsap.to('#loading-screen', { opacity: 0, duration: 0.6, delay: 0.2, onComplete: () => {
+        document.getElementById('loading-screen').style.display = 'none';
+    }});
+
+    gsap.to(camera.position, { x: 0, y: 1.5, z: 9, duration: 4.5, delay: 0.3, ease: 'power3.inOut' });
+    gsap.to(modelGroup.rotation, { x: 0, y: 0, z: 0, duration: 4.5, delay: 0.3, ease: 'power3.inOut' });
+
+    gsap.to(ambient,    { intensity: 0.35, duration: 2.5, delay: 0.8,  ease: 'power1.inOut' });
+    gsap.to(rimLight,   { intensity: 10,   duration: 1.5, delay: 1.5,  ease: 'power2.out' });
+    gsap.to(fillLight,  { intensity: 4,    duration: 1.5, delay: 2.0,  ease: 'power2.out' });
+    gsap.to(keyLight,   { intensity: 14,   duration: 2.5, delay: 2.5,  ease: 'bounce.out' });
+
+    setTimeout(() => {
+        document.getElementById('hero-text').classList.add('visible');
+        document.getElementById('data-strip').classList.add('visible');
+        liveData.forEach(d => {
+            if(d.bar) gsap.to(d.bar, { width: (d.p * 100) + '%', duration: 1.5, ease: 'power2.out' });
+        });
+    }, 3000);
+
+    setTimeout(() => {
+        document.getElementById('live-readout').classList.add('visible');
+        document.getElementById('team-info').classList.add('visible');
+    }, 3500);
+});
+
+// ──────────────────────────────────────────────────────────────
+// SHOWROOM
+let savedPos  = new THREE.Vector3();
+let savedTarg = new THREE.Vector3();
+
+document.getElementById('open-showroom-btn').addEventListener('click', () => {
+    if (!carModel || isTelemetry || isSeasonMode) return;
+    isShowroom = true;
+    savedPos.copy(camera.position);
+    savedTarg.copy(controls.target);
+
+    const sh = document.getElementById('showroom');
+    sh.style.display = 'flex';
+    requestAnimationFrame(() => sh.style.opacity = '1');
+    sh.querySelectorAll('.interactive').forEach(el => el.style.pointerEvents = 'auto');
+
+    document.getElementById('hero-text').classList.remove('visible');
+    document.getElementById('live-readout').classList.remove('visible');
+    document.getElementById('data-strip').classList.remove('visible');
+    document.getElementById('team-info').classList.remove('visible');
+    hotspotGroup.visible = false;
+
+    gsap.to(ambient,   { intensity: 1.8, duration: 1 });
+    gsap.to(keyLight,  { intensity: 22, duration: 1 });
+    gsap.to(fillLight, { intensity: 10, duration: 1 });
+    gsap.to(rimLight,  { intensity: 8, duration: 1 });
+    gsap.to(galleryLight, { intensity: 1.2, duration: 1 });
+    if (floor.material) gsap.to(floor.material, { roughness: 0.85, duration: 1 });
+    renderer.toneMappingExposure = 1.5;
+    if (bloomPass) gsap.to(bloomPass, { strength: 0.15, duration: 1 });
+
+    setView('free');
+});
+
+document.getElementById('showroom-close').addEventListener('click', exitShowroom);
+
+function exitShowroom() {
+    isShowroom = false;
+    const sh = document.getElementById('showroom');
+    sh.style.opacity = '0';
+    setTimeout(() => { sh.style.display = 'none'; }, 450);
+
+    controls.target.copy(savedTarg);
+    gsap.to(ambient,   { intensity: 0.35, duration: 1 });
+    gsap.to(keyLight,  { intensity: 14, duration: 1 });
+    gsap.to(fillLight, { intensity: 4, duration: 1 });
+    gsap.to(rimLight,  { intensity: 10, duration: 1 });
+    gsap.to(galleryLight, { intensity: 0, duration: 1 });
+    if (floor.material) gsap.to(floor.material, { roughness: 0.08, duration: 1 });
+    renderer.toneMappingExposure = 1.0;
+    if (bloomPass) gsap.to(bloomPass, { strength: 0.22, duration: 1 });
+    if (isWireframe) toggleWireframe();
+    document.getElementById('btn-wireframe').classList.remove('active');
+
+    gsap.to(camera.position, {
+        x: savedPos.x, y: savedPos.y, z: savedPos.z,
+        duration: 1.6, ease: 'power2.inOut',
+        onComplete: () => {
+            document.getElementById('hero-text').classList.add('visible');
+            document.getElementById('live-readout').classList.add('visible');
+            document.getElementById('data-strip').classList.add('visible');
+            document.getElementById('team-info').classList.add('visible');
+            hotspotGroup.visible = true;
+            controls.autoRotate = true;
+        }
+    });
+}
+
+document.querySelectorAll('.ctrl-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        if (btn.id === 'btn-wireframe') {
+            toggleWireframe();
+            btn.classList.toggle('active');
+        } else {
+            document.querySelectorAll('.ctrl-btn').forEach(b => { if (b.id !== 'btn-wireframe') b.classList.remove('active'); });
+            btn.classList.add('active');
+            setView(btn.dataset.view);
+        }
+    });
+});
+
+function toggleWireframe() {
+    if (!carModel) return;
+    isWireframe = !isWireframe;
+    const wm = new THREE.MeshBasicMaterial({ color: 0xcc1e4a, wireframe: true, transparent: true, opacity: 0.25 });
+    carModel.traverse(c => {
+        if (!c.isMesh) return;
+        c.material = isWireframe ? wm : (originalMaterials.get(c.uuid) || c.material);
+    });
+}
+
+function setView(v) {
+    if (!carModel) return;
+    const d = 15;
+    gsap.to(modelGroup.rotation, { x: 0, y: 0, z: 0, duration: 0.8 });
+    if (v === 'free') { controls.autoRotate = true; gsap.to(camera.position, { x: 10, y: 6, z: 10, duration: 1.4, ease: 'power2.inOut' }); return; }
+    controls.autoRotate = false;
+    const positions = { front:{x:0,y:2,z:d}, side:{x:d,y:2,z:0}, top:{x:0,y:d,z:1}, rear:{x:0,y:2,z:-d}, iso:{x:10,y:8,z:10} };
+    const p = positions[v];
+    if (p) gsap.to(camera.position, { ...p, duration: 1.3, ease: 'power2.inOut' });
+}
+
+// ──────────────────────────────────────────────────────────────
+// RENDER LOOP
+const clock = new THREE.Clock();
+
+function animate() {
+    requestAnimationFrame(animate);
+    const t = clock.getElapsedTime();
+    const delta = clock.getDelta() || 0.016;
+
+    if (!isShowroom) {
+        if (keyLight)    keyLight.intensity    = 14 + Math.sin(t * 1.2) * 1.2;
+        if (groundLight) groundLight.intensity = 2  + Math.sin(t * 2.8) * 0.5;
+
+        if (particlesMesh) particlesMesh.rotation.y += 0.05 * delta;
+
+        if (hotspotGroup && !isTelemetry && !isSeasonMode) {
+            hotspotMeshes.forEach((h, i) => {
+                const pulse = 0.48 + Math.sin(t * 4 + i * 1.2) * 0.06;
+                h.material.rotation -= 0.5 * delta; 
+                if (h === hoveredHotspot) { h.scale.set(0.7, 0.7, 1); }
+                else { h.scale.set(pulse, pulse, 1); }
+            });
+        }
+    }
+
+    if(!isShowroom && !isTelemetry && !isSeasonMode && document.getElementById('live-readout').classList.contains('visible')) {
+        liveData.forEach(d => {
+            if(Math.abs(d.curr - d.targ) < 2) d.targ = d.min + Math.random() * (d.max - d.min);
+            d.curr += (d.targ - d.curr) * 0.05;
+            if(d.el) d.el.innerHTML = Math.round(d.curr).toLocaleString() + ` <span>${d.unit}</span>`;
+        });
+    }
+
+    if (rgbShift) rgbShift.uniforms['amount'].value = Math.random() > 0.998 ? 0.0018 : 0.0006;
+
+    controls.update();
+    composer.render();
+}
+animate();
+
+window.addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+    composer.setSize(innerWidth, innerHeight);
+});
+
+// ──────────────────────────────────────────────────────────────
+// ANTI-INSPECT SECURITY SCRIPT & SHORTCUTS
+window.addEventListener('contextmenu', e => e.preventDefault()); // Disable Right Click
+
+window.addEventListener('keydown', e => {
+    // Escape keys for closing menus
+    if (e.key === 'Escape') {
+        if (isShowroom) exitShowroom();
+        if (isTelemetry) closeInspect();
+        if (isSeasonMode) document.getElementById('season-close').click();
+    }
+    
+    // Prevent common Developer Tools shortcuts
+    if (e.key === 'F12' || 
+       (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) || 
+       (e.ctrlKey && e.key === 'U')) {
+        e.preventDefault();
+    }
+});
+
+</script>
+</body>
+</html>
